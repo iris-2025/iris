@@ -38,17 +38,14 @@ const SettingsComponent = () => {
 
   const checkFaceRegistration = async () => {
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData?.user?.id) return;
-
       const { data: faceData } = await supabase
         .from('user_faces')
         .select('*')
-        .eq('user_id', userData.user.id)
+        .eq('user_id', localStorage.getItem('userId'))
         .single();
 
       setIsFaceRegistered(!!faceData);
-      setIsVerified(false); // Reset verification status on load
+      setIsVerified(false);
     } catch (error) {
       console.error('Error checking face registration:', error);
     }
@@ -105,14 +102,8 @@ const SettingsComponent = () => {
       const descriptor = await captureAndProcessFace();
       if (!descriptor) return;
 
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData?.user?.id) {
-        alert('Please log in first');
-        return;
-      }
-
       const { error } = await supabase.from('user_faces').upsert({
-        user_id: userData.user.id,
+        user_id: localStorage.getItem('userId'),
         face_encoding: JSON.stringify(Array.from(descriptor)),
         updated_at: new Date().toISOString()
       });
@@ -133,13 +124,10 @@ const SettingsComponent = () => {
       const currentDescriptor = await captureAndProcessFace();
       if (!currentDescriptor) return;
 
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData?.user?.id) return;
-
       const { data: faceData } = await supabase
         .from('user_faces')
         .select('face_encoding')
-        .eq('user_id', userData.user.id)
+        .eq('user_id', localStorage.getItem('userId'))
         .single();
 
       if (!faceData) {
@@ -165,13 +153,10 @@ const SettingsComponent = () => {
 
   const fetchContacts = async () => {
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData?.user?.id) return;
-
       const { data, error } = await supabase
         .from('emergency_contacts')
         .select('*')
-        .eq('user_id', userData.user.id);
+        .eq('user_id', localStorage.getItem('userId'));
 
       if (error) throw error;
 
@@ -187,23 +172,6 @@ const SettingsComponent = () => {
     }
   };
 
-  const addContact = () => {
-    setContacts([...contacts, { name: '', phone: '' }]);
-    setHasUnsavedChanges(true);
-  };
-
-  const removeContact = (index) => {
-    setContacts(contacts.filter((_, i) => i !== index));
-    setHasUnsavedChanges(true);
-  };
-
-  const updateContact = (index, field, value) => {
-    const newContacts = [...contacts];
-    newContacts[index] = { ...newContacts[index], [field]: value };
-    setContacts(newContacts);
-    setHasUnsavedChanges(true);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -213,12 +181,6 @@ const SettingsComponent = () => {
     }
 
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      if (!userData?.user?.id) {
-        alert('Please log in first');
-        return;
-      }
-
       // Validate contacts
       if (contacts.some(contact => !contact.name || !contact.phone)) {
         alert('Please fill in all contact details');
@@ -229,12 +191,12 @@ const SettingsComponent = () => {
       await supabase
         .from('emergency_contacts')
         .delete()
-        .eq('user_id', userData.user.id);
+        .eq('user_id', localStorage.getItem('userId'));
 
       // Insert new contacts
       const { error } = await supabase.from('emergency_contacts').insert(
         contacts.map(contact => ({
-          user_id: userData.user.id,
+          user_id: localStorage.getItem('userId'),
           contact_name: contact.name,
           phone_number: contact.phone
         }))
@@ -248,7 +210,7 @@ const SettingsComponent = () => {
       alert('Failed to save contacts');
     }
   };
-
+  
   const sendEmergencySMS = async (phoneNumber) => {
     if (!phoneNumber) {
       alert('Please enter a valid phone number');
