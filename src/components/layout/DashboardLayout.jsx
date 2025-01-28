@@ -9,6 +9,8 @@ import CalendarComponent from '../dashboard/CalendarComponent';
 import MapComponent from '../dashboard/MapComponent';
 import NotesComponent from '../dashboard/NotesComponent';
 import SettingsComponent from '../dashboard/SettingsComponent';
+import DiaryComponent from '../dashboard/DiaryComponent';
+
 const GOOGLE_MAPS_API_KEY = 'AIzaSyBRA7gd40g5JUKf_Laig5wWRhQkQIZbDYY'; // 
 
 const DashboardLayout = () => {
@@ -27,6 +29,8 @@ const DashboardLayout = () => {
         return  <MapComponent apiKey={GOOGLE_MAPS_API_KEY} />;
       case 'notes':
         return <NotesComponent />;
+      case 'diary':
+          return <DiaryComponent />;
       case 'settings':
         return <SettingsComponent />;
       default:

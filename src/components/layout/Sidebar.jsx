@@ -61,11 +61,9 @@ const Sidebar = ({ isOpen, setIsOpen, activeComponent, setActiveComponent }) => 
   const menuItems = [
     { id: 'chat', icon: MessageSquare, label: 'Travel Chat' },
     { id: 'weather', icon: Cloud, label: 'Weather' },
-    { id: 'itinerary', icon: Book, label: 'Itinerary' },
-    { id: 'hotels', icon: Hotel, label: 'Hotels' },
+    { id: 'diary', icon: Book, label: 'Diary' },
     { id: 'calendar', icon: Calendar, label: 'Calendar' },
-    { id: 'map', icon: Map, label: 'Explore' },
-    { id: 'notes', icon: FileText, label: 'Travel Notes' },
+    { id: 'map', icon: Map, label: 'Maps' },
     { id: 'settings', icon: Settings, label: 'Emergency Settings' }
   ];
 

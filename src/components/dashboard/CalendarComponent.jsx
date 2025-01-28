@@ -1,34 +1,84 @@
-import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, Clock, CalendarDays, X, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Plus, Clock, X, AlertTriangle } from 'lucide-react';
+import { supabase } from '../../supabaseClient';
 
 const CalendarComponent = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [showEventModal, setShowEventModal] = useState(false);
-  const [events, setEvents] = useState([
-    {
-      date: new Date(),
-      title: "Medicine Reminder",
-      time: "09:00",
-      type: "medical",
-    },
-    {
-      date: new Date(),
-      title: "Doctor's Appointment",
-      time: "14:30",
-      type: "appointment",
-    }
-  ]);
+  const [events, setEvents] = useState([]);
   const [newEvent, setNewEvent] = useState({
     title: "",
     time: "",
     type: "general"
   });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const months = [
     "January", "February", "March", "April", "May", "June",
     "July", "August", "September", "October", "November", "December"
   ];
+
+  const getUserFromStorage = () => {
+    const sessionData = localStorage.getItem('session');
+    if (!sessionData) return null;
+    
+    const session = JSON.parse(sessionData);
+    // Check if session has expired
+    if (new Date(session.expiry) < new Date()) {
+      localStorage.removeItem('session');
+      return null;
+    }
+    return session.user;
+  };
+  
+  const fetchEvents = async () => {
+    const user = getUserFromStorage();
+    if (!user || !user.id) {
+      setLoading(false);
+      setError('Please sign in to view events');
+      return;
+    }
+
+    try {
+      const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+      const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
+      
+      console.log(`Fetching events for user_id: ${parseInt(user.id)}, between ${startOfMonth.toISOString()} and ${endOfMonth.toISOString()}`);
+
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('user_id', parseInt(user.id)) // Ensure user_id is parsed as integer
+        .gte('event_date', startOfMonth.toISOString().split('T')[0]) // Format as 'YYYY-MM-DD'
+        .lte('event_date', endOfMonth.toISOString().split('T')[0]); // Format as 'YYYY-MM-DD'
+
+      if (error) {
+        console.error('Supabase Fetch Error:', error);
+        throw error;
+      }
+
+      const formattedEvents = data.map(event => ({
+        ...event,
+        date: new Date(event.event_date),
+        time: event.event_time.slice(0, 5)
+      }));
+
+      setEvents(formattedEvents);
+      setError(null);
+    } catch (err) {
+      console.error('Error fetching events:', err);
+      setError('Failed to load events');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentDate]);
 
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
@@ -72,24 +122,105 @@ const CalendarComponent = () => {
     );
   };
 
-  const handleAddEvent = () => {
-    if (newEvent.title && newEvent.time) {
-      setEvents([...events, {
-        ...newEvent,
-        date: selectedDate
-      }]);
+  const handleAddEvent = async () => {
+    const user = getUserFromStorage();
+    if (!user || !user.id) {
+      setError('Please sign in to add events');
+      return;
+    }
+
+    if (!newEvent.title || !newEvent.time) {
+      setError('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const eventDate = new Date(selectedDate);
+      eventDate.setHours(0, 0, 0, 0);
+      const formattedDate = eventDate.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+      console.log('Adding Event:', {
+        user_id: parseInt(user.id),
+        title: newEvent.title,
+        event_date: formattedDate,
+        event_time: newEvent.time,
+        event_type: newEvent.type
+      });
+
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .insert([{
+          user_id: parseInt(user.id), // Ensure user_id is parsed as integer
+          title: newEvent.title,
+          event_date: formattedDate,
+          event_time: newEvent.time,
+          event_type: newEvent.type
+        }])
+        .select();
+
+      if (error) {
+        console.error('Supabase Insert Error:', error);
+        throw error;
+      }
+
+      const formattedNewEvent = {
+        ...data[0],
+        date: new Date(data[0].event_date),
+        time: data[0].event_time.slice(0, 5)
+      };
+
+      setEvents([...events, formattedNewEvent]);
       setShowEventModal(false);
       setNewEvent({ title: "", time: "", type: "general" });
+      setError(null);
+    } catch (err) {
+      console.error('Error adding event:', err);
+      setError('Failed to add event');
     }
   };
 
-  const handleDeleteEvent = (eventToDelete) => {
-    setEvents(events.filter(event => 
-      event.date !== eventToDelete.date || 
-      event.title !== eventToDelete.title || 
-      event.time !== eventToDelete.time
-    ));
+  const handleDeleteEvent = async (eventToDelete) => {
+    const user = getUserFromStorage();
+    if (!user || !user.id) {
+      setError('Please sign in to delete events');
+      return;
+    }
+
+    try {
+      console.log('Deleting Event:', {
+        id: eventToDelete.id,
+        user_id: parseInt(user.id)
+      });
+
+      const { error } = await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('id', eventToDelete.id)
+        .eq('user_id', parseInt(user.id)); // Ensure user_id is parsed as integer
+
+      if (error) {
+        console.error('Supabase Delete Error:', error);
+        throw error;
+      }
+
+      setEvents(events.filter(event => event.id !== eventToDelete.id));
+      setError(null);
+    } catch (err) {
+      console.error('Error deleting event:', err);
+      setError('Failed to delete event');
+    }
   };
+
+  // If no user data, show auth required message
+  if (!getUserFromStorage()) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full p-4 bg-gray-900/50 rounded-xl border border-gray-700/50">
+        <AlertTriangle className="h-8 w-8 text-yellow-500 mb-2" />
+        <h2 className="text-lg font-medium text-white mb-2">Authentication Required</h2>
+        <p className="text-gray-400 text-center">Please sign in to access your calendar</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full max-w-md mx-auto bg-gray-900/50 rounded-xl overflow-hidden border border-gray-700/50">
@@ -98,6 +229,13 @@ const CalendarComponent = () => {
         <h2 className="text-xl font-semibold text-white">Calendar</h2>
         <p className="text-sm text-gray-400">Manage your reminders and appointments</p>
       </div>
+
+      {error && (
+        <div className="p-4 bg-red-500/20 border border-red-500/50 mx-4 mt-4 rounded-lg flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-red-300" />
+          <p className="text-red-200 text-sm">{error}</p>
+        </div>
+      )}
 
       {/* Calendar Navigation */}
       <div className="flex items-center justify-between p-4 bg-gray-800/30">
@@ -165,39 +303,53 @@ const CalendarComponent = () => {
             </button>
           </div>
           
-          <div className="space-y-2">
-            {getEventsForDate(selectedDate).map((event, index) => (
-              <div 
-                key={index}
-                className="flex items-center justify-between p-3 bg-gray-800/30 rounded-lg border border-gray-700/50"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm text-gray-300">{event.time}</span>
-                  </div>
-                  <span className="text-white">{event.title}</span>
-                </div>
-                <button
-                  onClick={() => handleDeleteEvent(event)}
-                  className="text-gray-400 hover:text-red-400"
+          {loading ? (
+            <div className="text-center p-4 text-gray-400">
+              Loading events...
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {getEventsForDate(selectedDate).map((event, index) => (
+                <div 
+                  key={event.id} // Changed key to event.id for uniqueness
+                  className="flex items-center justify-between p-3 bg-gray-800/30 rounded-lg border border-gray-700/50"
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
-          </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-gray-400" />
+                      <span className="text-sm text-gray-300">{event.time}</span>
+                    </div>
+                    <span className="text-white">{event.title}</span>
+                  </div>
+                  <button
+                    onClick={() => handleDeleteEvent(event)}
+                    className="text-gray-400 hover:text-red-400"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
+              {getEventsForDate(selectedDate).length === 0 && (
+                <div className="text-center p-4 text-gray-400">
+                  No events for this date
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
       {/* Add Event Modal */}
       {showEventModal && (
-        <div className="absolute inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center">
           <div className="bg-gray-800 p-6 rounded-xl w-96 border border-gray-700">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-medium text-white">Add New Event</h3>
               <button 
-                onClick={() => setShowEventModal(false)}
+                onClick={() => {
+                  setShowEventModal(false);
+                  setNewEvent({ title: "", time: "", type: "general" });
+                }}
                 className="text-gray-400 hover:text-gray-300"
               >
                 <X className="h-5 w-5" />
@@ -245,8 +397,14 @@ const CalendarComponent = () => {
               
               <button
                 onClick={handleAddEvent}
-                className="w-full bg-blue-600 py-2 px-4 rounded-lg text-white hover:bg-blue-700 
-                  transition-colors flex items-center justify-center gap-2"
+                disabled={!newEvent.title || !newEvent.time}
+                className={`
+                  w-full py-2 px-4 rounded-lg text-white transition-colors 
+                  flex items-center justify-center gap-2
+                  ${!newEvent.title || !newEvent.time 
+                    ? 'bg-gray-600 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700'}
+                `}
               >
                 <Plus className="h-5 w-5" />
                 Add Event
