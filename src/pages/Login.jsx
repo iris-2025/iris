@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -16,15 +15,21 @@ export default function Login() {
     setError(null);
 
     try {
-      // Use Supabase's built-in auth instead of direct table query
-      const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // Query the users table directly
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .eq('password', password)
+        .single();
 
-      if (signInError) throw signInError;
+      if (error) throw error;
 
-      // Create a session with expiry
+      if (!user) {
+        throw new Error('Invalid email or password');
+      }
+
+      // Create a session
       const session = {
         user: {
           id: user.id,
@@ -34,11 +39,11 @@ export default function Login() {
         expiry: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() // 24 hours
       };
 
-      // Save session securely
+      // Save session
       localStorage.setItem('session', JSON.stringify(session));
       navigate('/dashboard');
     } catch (error) {
-      setError(error.message);
+      setError('Invalid email or password');
     } finally {
       setIsLoading(false);
     }
@@ -54,9 +59,9 @@ export default function Login() {
         </div>
 
         {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+          <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <span className="block sm:inline">{error}</span>
+          </div>
         )}
 
         <form className="mt-8 space-y-6" onSubmit={handleLogin}>

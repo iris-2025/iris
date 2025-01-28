@@ -19,7 +19,7 @@ export default function Register() {
           {
             email,
             password,
-            face_descriptor: [] // Initialize with empty array
+    
           }
         ])
         .select()
