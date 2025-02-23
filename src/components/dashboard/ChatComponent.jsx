@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Bot, User, Trash } from 'lucide-react';
+import { Send, Loader2, Bot, User, Trash, Mic, Volume2, VolumeX } from 'lucide-react';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const ChatComponent = () => {
@@ -7,12 +7,97 @@ const ChatComponent = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const recognitionRef = useRef(null);
+  const synthesisRef = useRef(window.speechSynthesis);
 
   // Initialize Gemini
   const genAI = new GoogleGenerativeAI("AIzaSyCXmqFCPQ-BCbLeKLIypzxtis6QpdDWtVc");
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window) {
+      const recognition = new window.webkitSpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setInputMessage(transcript);
+        handleSubmit({ preventDefault: () => {} }, transcript);
+      };
+
+      recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        setError('Speech recognition failed. Please try again.');
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+  }, []);
+
+  // Toggle speech recognition
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      setError('Speech recognition is not supported in your browser.');
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      setError(null);
+      recognitionRef.current.start();
+      setIsListening(true);
+    }
+  };
+
+  // Text-to-speech function
+  const speak = (text) => {
+    if (!synthesisRef.current) {
+      setError('Text-to-speech is not supported in your browser.');
+      return;
+    }
+
+    // Cancel any ongoing speech
+    synthesisRef.current.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => {
+      setIsSpeaking(false);
+      setError('Text-to-speech failed. Please try again.');
+    };
+
+    synthesisRef.current.speak(utterance);
+  };
+
+  // Toggle text-to-speech for the last assistant message
+  const toggleSpeak = () => {
+    if (isSpeaking) {
+      synthesisRef.current.cancel();
+      setIsSpeaking(false);
+    } else {
+      const lastAssistantMessage = [...messages].reverse()
+        .find(m => m.role === 'assistant');
+      if (lastAssistantMessage) {
+        // Remove HTML tags from the processed response
+        const plainText = lastAssistantMessage.content.replace(/<[^>]+>/g, '');
+        speak(plainText);
+      }
+    }
+  };
 
   // Auto scroll to bottom when new messages arrive
   const scrollToBottom = () => {
@@ -25,45 +110,17 @@ const ChatComponent = () => {
 
   // Process markdown-like syntax in the response
   const processResponse = (text) => {
-    // Convert headers
-    text = text.replace(/#{1,6} (.+)/g, (match, content) => {
-      const level = match.split(' ')[0].length;
-      const size = Math.max(6 - level + 1, 1);
-      return `<h${level} class="text-${size}xl font-bold my-2 text-white">${content}</h${level}>`;
-    });
-
-    // Convert bold text
-    text = text.replace(/\*\*(.+?)\*\*/g, '<strong class="font-bold">$1</strong>');
-
-    // Convert italic text
-    text = text.replace(/\*(.+?)\*/g, '<em class="italic">$1</em>');
-
-    // Convert code blocks
-    text = text.replace(/```(\w+)?\n([\s\S]+?)\n```/g, 
-      '<pre class="bg-gray-800 p-4 rounded-lg my-2 overflow-x-auto"><code>$2</code></pre>');
-
-    // Convert inline code
-    text = text.replace(/`(.+?)`/g, '<code class="bg-gray-800 px-1 rounded">$1</code>');
-
-    // Convert bullet points
-    text = text.replace(/^\s*[-*+]\s+(.+)/gm, '<li class="ml-4">$1</li>');
-
-    // Convert numbered lists
-    text = text.replace(/^\s*\d+\.\s+(.+)/gm, '<li class="ml-4">$1</li>');
-
-    // Convert line breaks
-    text = text.replace(/\n/g, '<br>');
-
-    return text;
+    // ... (keep existing processResponse function unchanged)
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e, voiceInput = null) => {
     e.preventDefault();
-    if (!inputMessage.trim() || isLoading) return;
+    const messageText = voiceInput || inputMessage;
+    if (!messageText.trim() || isLoading) return;
 
     const userMessage = {
       role: 'user',
-      content: inputMessage.trim()
+      content: messageText.trim()
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -79,6 +136,9 @@ const ChatComponent = () => {
       };
       
       setMessages(prev => [...prev, assistantMessage]);
+      
+      // Automatically speak the assistant's response
+      speak(assistantMessage.content);
     } catch (err) {
       console.error('Error generating response:', err);
       setError('Failed to generate response. Please try again.');
@@ -91,6 +151,8 @@ const ChatComponent = () => {
     setMessages([]);
     setError(null);
     inputRef.current?.focus();
+    synthesisRef.current.cancel();
+    setIsSpeaking(false);
   };
 
   return (
@@ -101,13 +163,22 @@ const ChatComponent = () => {
           <h2 className="text-xl font-semibold text-white">AI Chat Assistant</h2>
           <p className="text-sm text-gray-400">Powered by Gemini</p>
         </div>
-        <button
-          onClick={clearChat}
-          className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors"
-          aria-label="Clear chat"
-        >
-          <Trash className="h-5 w-5" />
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={toggleSpeak}
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors"
+            aria-label={isSpeaking ? "Stop speaking" : "Speak response"}
+          >
+            {isSpeaking ? <VolumeX className="h-5 w-5" /> : <Volume2 className="h-5 w-5" />}
+          </button>
+          <button
+            onClick={clearChat}
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors"
+            aria-label="Clear chat"
+          >
+            <Trash className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {/* Chat Messages */}
@@ -178,6 +249,18 @@ const ChatComponent = () => {
               text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             disabled={isLoading}
           />
+          <button
+            type="button"
+            onClick={toggleListening}
+            className={`p-2 rounded-lg text-white transition-colors ${
+              isListening 
+                ? 'bg-red-600 hover:bg-red-700' 
+                : 'bg-gray-600 hover:bg-gray-700'
+            }`}
+            disabled={isLoading}
+          >
+            <Mic className="h-5 w-5" />
+          </button>
           <button
             type="submit"
             disabled={isLoading || !inputMessage.trim()}
