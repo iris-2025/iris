@@ -7,7 +7,7 @@ const DiaryComponent = () => {
     title: '', 
     content: '', 
     mood: '',
-    entry_date: new Date().toISOString().split('T')[0]
+    entry_date: new Date().toLocaleDateString('en-CA')  // Changed to local date string in YYYY-MM-DD format
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -21,6 +21,19 @@ const DiaryComponent = () => {
     endDate: ''
   });
   const [selectedMood, setSelectedMood] = useState('');
+
+  // Function to convert local date to UTC for storage
+  const toUTCDate = (dateString) => {
+    const date = new Date(dateString);
+    const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    return utcDate.toISOString().split('T')[0];
+  };
+
+  // Function to convert UTC date to local date
+  const toLocalDate = (dateString) => {
+    const date = new Date(dateString);
+    return new Date(date.getTime() + (date.getTimezoneOffset() * 60000)).toLocaleDateString();
+  };
 
   // Fetch diary entries with filters
   const fetchEntries = async () => {
@@ -42,12 +55,12 @@ const DiaryComponent = () => {
         query = query.or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`);
       }
 
-      // Apply date filters if exist
+      // Apply date filters if exist with timezone adjustment
       if (dateRange.startDate) {
-        query = query.gte('entry_date', dateRange.startDate);
+        query = query.gte('entry_date', toUTCDate(dateRange.startDate));
       }
       if (dateRange.endDate) {
-        query = query.lte('entry_date', dateRange.endDate);
+        query = query.lte('entry_date', toUTCDate(dateRange.endDate));
       }
 
       // Apply mood filter if exists
@@ -89,7 +102,7 @@ const DiaryComponent = () => {
             title: newEntry.title,
             content: newEntry.content,
             mood: newEntry.mood,
-            entry_date: newEntry.entry_date
+            entry_date: toUTCDate(newEntry.entry_date)  // Convert to UTC before saving
           }
         ])
         .select();
@@ -101,7 +114,7 @@ const DiaryComponent = () => {
         title: '', 
         content: '', 
         mood: '',
-        entry_date: new Date().toISOString().split('T')[0]
+        entry_date: new Date().toLocaleDateString('en-CA')
       });
     } catch (error) {
       setError(error.message);
@@ -122,7 +135,7 @@ const DiaryComponent = () => {
           title: newEntry.title,
           content: newEntry.content,
           mood: newEntry.mood,
-          entry_date: newEntry.entry_date,
+          entry_date: toUTCDate(newEntry.entry_date),  // Convert to UTC before saving
           updated_at: new Date().toISOString()
         })
         .eq('id', selectedEntry.id)
@@ -137,7 +150,7 @@ const DiaryComponent = () => {
         title: '', 
         content: '', 
         mood: '',
-        entry_date: new Date().toISOString().split('T')[0]
+        entry_date: new Date().toLocaleDateString('en-CA')
       });
       setIsEditing(false);
       setSelectedEntry(null);
@@ -273,7 +286,7 @@ const DiaryComponent = () => {
                       title: '', 
                       content: '', 
                       mood: '',
-                      entry_date: new Date().toISOString().split('T')[0]
+                      entry_date: new Date().toLocaleDateString('en-CA')
                     });
                   }}
                   className="px-6 py-2 bg-gray-600 rounded-lg hover:bg-gray-500 transition-colors"
@@ -310,7 +323,7 @@ const DiaryComponent = () => {
                 <div>
                   <h3 className="text-xl font-semibold">{entry.title}</h3>
                   <p className="text-sm text-gray-400 mt-1">
-                    {new Date(entry.entry_date).toLocaleDateString()}
+                    {toLocalDate(entry.entry_date)}  {/* Using our custom date formatter */}
                   </p>
                 </div>
                 <div className="flex space-x-2">
